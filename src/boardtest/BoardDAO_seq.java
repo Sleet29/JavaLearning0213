@@ -1,156 +1,326 @@
 package boardtest;
+
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+
 import java.util.ArrayList;
 import java.util.List;
 
-
-
 public class BoardDAO_seq {
-	private Connection conn;
-    private PreparedStatement pstmt;
-    private ResultSet rs;
-	private ArrayList<Board> boardList;
 
-    public BoardDAO_seq() {
-    	try {
-            String dbURL = "jdbc:oracle:thin:@localhost:1521:xe"; // 데이터베이스 URL
-            String dbID = "board"; // 데이터베이스 계정
-            String dbPassword = "1234"; // 데이터베이스 비밀번호
-            Class.forName("oracle.jdbc.driver.OracleDriver");
-            conn = DriverManager.getConnection(dbURL, dbID, dbPassword);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+	public BoardDAO_seq() {
 
-    public int boardInsert(Board board) {
-    	String SQL = "INSERT INTO BOARD VALUES (board_seq.NEXTVAL, ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 0, SYSDATE)";
-        try {
-            pstmt = conn.prepareStatement(SQL);
-            pstmt.setString(1, board.getBoard_name());
-            pstmt.setString(2, board.getBoard_pass());
-            pstmt.setString(3, board.getBoard_subject());
-            pstmt.setString(4, board.getBoard_content());
-            return pstmt.executeUpdate(); // 삽입된 행의 수 반환
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return -1; // 오류 발생 시 -1 반환
-    }
+	}
 
-    public int boardModify(Board modifyboard) {
-    	String SQL = "UPDATE BOARD SET BOARD_SUBJECT=?, BOARD_CONTENT=? WHERE BOARD_NUM=?";
-        try {
-            pstmt = conn.prepareStatement(SQL);
-            pstmt.setString(1, modifyboard.getBoard_subject());
-            pstmt.setString(2, modifyboard.getBoard_content());
-            pstmt.setInt(3, modifyboard.getBoard_num());
-            return pstmt.executeUpdate(); // 수정된 행의 수 반환
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return -1; // 오류 발생 시 -1 반환
-    }
+	// 글 목록 보기
+	public List<Board> getBoardList(int page, int limit) {
+		PreparedStatement pstmt = null;
+		Connection conn = null;
+		ResultSet rs = null;
+		
+		String board_list_sql = 
+				  "select * "
+				+ "from " 
+		        + "     (select rownum rnum, b.* " 
+		        + "      from (select * from board "
+				+ "            order by BOARD_RE_REF desc, BOARD_RE_SEQ asc) b"
+				+ "      where rownum<=?) " 
+				+ "where rnum>=? and rnum<=?";
+		
+		
+		List<Board> list = new ArrayList<Board>();
+		// 한 페이지당 10개씩 목록인 경우                              1페이지, 2페이지, 3페이지, 4페이지 ...
+		int startrow = (page - 1) * limit + 1; // 읽기 시작할 row 번호(1    11     21      31 ...
+		int endrow = startrow + limit - 1;     // 읽을 마지막 row 번호(10    20     30      40 ...
+		
+		try {
+			Class.forName("oracle.jdbc.driver.OracleDriver");
+			String url = "jdbc:oracle:thin:@localhost:1521:xe";
+			conn = DriverManager.getConnection(url, "board", "1234");
+			pstmt = conn.prepareStatement(board_list_sql);
+			pstmt.setInt(1, endrow);
+			pstmt.setInt(2, startrow);
+			pstmt.setInt(3, endrow);
+			rs = pstmt.executeQuery();
 
-    public int boardReply(Board board) {
-    	Connection conn = null;
-    	PreparedStatement pstmt = null;
-    	
-        int result = 0; 
-        /*
-         * 답변을 할 원문 글 그룹 번호입니다.
-         * 답변을 달게 되면 답변 글은 이 번호와 같은 관련글 번호를 갖게 처리되면서
-         * 같은 그룹에 속하게 됩니다. 글 목록에서 보여줄 때 하나의 그룹으로 묶여서 출력됩니다.
-         * 
-         */
-        int re_ref = board.getBoard_re_ref();
-        
-        /*
-         * 답글의 깊이를 의미합니다.
-         * 원문에 대한 답글이 출력될 때 한 번 들여쓰기 처리가 되고 답글에 대한 답글은 들여쓰기가 두 번 처리되게
-         * 합니다. 원문인 경우에는 이 값이 0이고 원문의 답글은 1, 답글의 답글은 2가 됩니다.
-         * 
-         */
-        int re_lev = board.getBoard_re_lev();
-        
-        // 같은 관련 글 중에서 해당 글이 출력되는 순서.
-        int re_seq = board.getBoard_re_seq();
-        
-        try {
-        	Class.forName("oracle.jdbc.driver.OracleDriver");
-        	String url = "jdbc:oracle:thin:@localhost:1521:xe";
-        	conn = DriverManager.getConnection(url,"board","1234");
-        	
-        	// 트랜잭션을 이용하기 위해서 setAutoCommit을 false로 설정합니다.
-        	conn.setAutoCommit(false);
-        	
-        	// BOARD_RE_REF, BOARD_RE_SEQ 값을 확인하여 원문 글에 다른 답글이 있으면
-        	// 다른 답글들의 BOARD_RE_SEQ값을 1씩 증가시킵니다.
-        	// 현재 글을 다른 답글보다 앞에 출력되게 하기 위해서 입니다.
-        	String sql = "update board "
-        			+ "set 		BOARD_RE_SEQ = BOARD_RE_SEQ+1 "
-        			+ "where 	BOARD_RE_REF = ? "
-        			+ "and 		BOARD_RE_SEQ > ? ";
-        	
-        }
-    
-    }
+			while (rs.next()) {
+				
+				Board board = new Board();
+				board.setBoard_num(rs.getInt("BOARD_NUM"));
+				board.setBoard_name(rs.getString("BOARD_NAME"));
+				board.setBoard_subject(rs.getString("BOARD_SUBJECT"));
+				board.setBoard_content(rs.getString("BOARD_CONTENT"));
+				//board.setBoard_file(rs.getString("BOARD_FILE"));
+				board.setBoard_re_ref(rs.getInt("BOARD_RE_REF"));
+				board.setBoard_re_lev(rs.getInt("BOARD_RE_LEV"));
+				board.setBoard_re_seq(rs.getInt("BOARD_RE_SEQ"));
+				//board.setBOARD_READCOUNT(rs.getInt("BOARD_READCOUNT"));
+				board.setBoard_date(rs.getString("BOARD_DATE"));
+				list.add(board); // 값을 담은 객체를 리스트에 저장합니다.
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace();
+			System.out.println("getBoardList() 에러 : " + ex);
+		} finally {
+			if (rs != null)
+				try {
+						rs.close();
+				} catch (SQLException e) {
+					System.out.println(e.getMessage());
+				}
+			if (pstmt != null)
+				try {
+						pstmt.close();
+				} catch (SQLException e) {
+					System.out.println(e.getMessage());
+				}
+			if (conn != null)
+				try {
+					conn.close(); //4단계 : DB연결을 끊는다.
+				} catch (Exception e) {
+					System.out.println(e.getMessage());
+				}
+		}
+		return list;
+	}// getBoardList()메서드 end
 
-    public List<Board> getBoardList(int page, int limit) {
-    	List<Board> list = new ArrayList<>();
-        int startrow = (page - 1) * limit + 1; // 읽기 시작할 row 번호
-        int endrow = startrow + limit - 1; // 읽을 마지막 row 번호
-        String SQL = "SELECT * FROM (SELECT ROWNUM AS rnum, B.* FROM (SELECT * FROM BOARD ORDER BY BOARD_NUM DESC) B) WHERE rnum >= ? AND rnum <= ?";
-        try {
-            pstmt = conn.prepareStatement(SQL);
-            pstmt.setInt(1, startrow);
-            pstmt.setInt(2, endrow);
-            rs = pstmt.executeQuery();
-            while (rs.next()) {
-                Board board = new Board();
-                board.setBoard_num(rs.getInt("board_num"));
-                board.setBoard_name(rs.getString("board_name"));
-                board.setBoard_subject(rs.getString("board_subject"));
-                board.setBoard_content(rs.getString("board_content"));
-                board.setBoard_date(rs.getString("board_date"));
-                list.add(board);
-            }
-            if (list.isEmpty()) {
-                System.out.println("테이블에 데이터가 없습니다.");
-            } else {
-                System.out.println("글번호\t작성자\t\t제목\t\t\t\t\t내용\t\t\t\t\tdate");
-                for (Board board : list) {
-                    System.out.println(board.getBoard_num() + "\t" + board.getBoard_name() + "\t\t" + board.getBoard_subject() + "\t\t\t\t" + board.getBoard_content() + "\t\t\t\t" + board.getBoard_date());
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return list;
-    }
+	// 글 내용 보기
+	public Board getDetail(int num) {
+		PreparedStatement pstmt = null;
+		Connection conn = null;
+		ResultSet rs = null;
+		Board board = null;
+		try {
+			Class.forName("oracle.jdbc.driver.OracleDriver");
+			String url = "jdbc:oracle:thin:@localhost:1521:xe";
+			conn = DriverManager.getConnection(url, "board", "1234");
+			
+			pstmt = conn.prepareStatement("select * from board where BOARD_NUM = ?");
+			pstmt.setInt(1, num);
+			rs = pstmt.executeQuery();
+			if (rs.next()) {
+				board = new Board();
+				board.setBoard_num(rs.getInt("BOARD_NUM"));
+				board.setBoard_pass(rs.getString("BOARD_PASS"));//비밀번호 확인시 사용됩니다.
+				board.setBoard_name(rs.getString("BOARD_NAME"));
+				board.setBoard_subject(rs.getString("BOARD_SUBJECT"));
+				board.setBoard_content(rs.getString("BOARD_CONTENT"));
+				//board.setBoard_file(rs.getString("BOARD_FILE"));
+				board.setBoard_re_ref(rs.getInt("BOARD_RE_REF"));
+				board.setBoard_re_lev(rs.getInt("BOARD_RE_LEV"));
+				board.setBoard_re_seq(rs.getInt("BOARD_RE_SEQ"));
+				board.setBoard_readcount(rs.getInt("BOARD_READCOUNT"));
+				board.setBoard_date(rs.getString("BOARD_DATE"));
+			}
+			
+		} catch (Exception ex) {
+			System.out.println("getDetail() 에러: " + ex);
+		} finally {
+			if (rs != null)
+				try {
+						rs.close();
+				} catch (SQLException e) {
+					System.out.println(e.getMessage());
+				}
+			if (pstmt != null)
+				try {
+						pstmt.close();
+				} catch (SQLException e) {
+					System.out.println(e.getMessage());
+				}
+			if (conn != null)
+				try {
+					conn.close(); //4단계 : DB연결을 끊는다.
+				} catch (Exception e) {
+					System.out.println(e.getMessage());
+				}
+		}
+		return board;
+	}// getDetail()메서드 end
+	
+	
+	// 글 수정
+		public int boardModify(Board modifyboard) {
+			PreparedStatement pstmt = null;
+			Connection conn = null;
+			String sql = "update board " 
+			           + "set    BOARD_SUBJECT= ?, " 
+					   + "       BOARD_CONTENT= ? " 
+			           + "where  BOARD_NUM=? ";
+			int result = 0;
+			try {
+				Class.forName("oracle.jdbc.driver.OracleDriver");
+				String url = "jdbc:oracle:thin:@localhost:1521:xe";
+				conn = DriverManager.getConnection(url, "board", "1234");
+				pstmt = conn.prepareStatement(sql);
+				pstmt.setString(1, modifyboard.getBoard_subject());
+				pstmt.setString(2, modifyboard.getBoard_content());
+				pstmt.setInt(3, modifyboard.getBoard_num());
+				result = pstmt.executeUpdate();
+			} catch (Exception ex) {
+				ex.printStackTrace();
+				System.out.println("boardModify() 에러: " + ex);
+			} finally {
+				if (pstmt != null)
+					try {
+							pstmt.close();
+					} catch (SQLException e) {
+						System.out.println(e.getMessage());
+					}
+				if (conn != null)
+					try {
+						conn.close(); //4단계 : DB연결을 끊는다.
+					} catch (Exception e) {
+						System.out.println(e.getMessage());
+					}
+			}
+			return result;
+		}// boardModify()메서드 end
 
-    public Board getDetail(int boardNum) {
-    	String SQL = "SELECT * FROM BOARD WHERE BOARD_NUM=?";
-        try {
-            pstmt = conn.prepareStatement(SQL);
-            pstmt.setInt(1, boardNum);
-            rs = pstmt.executeQuery();
-            if (rs.next()) {
-                Board board = new Board();
-                board.setBoard_num(rs.getInt("board_num"));
-                board.setBoard_name(rs.getString("board_name"));
-                board.setBoard_subject(rs.getString("board_subject"));
-                board.setBoard_content(rs.getString("board_content"));
-                board.setBoard_date(rs.getString("board_date"));
-                return board;
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return null; // 해당하는 글이 없는 경우 null 반환
-    }
-}
+
+	// 글 등록하기
+	public int boardInsert(Board board) {
+		PreparedStatement pstmt = null;
+		Connection conn = null;
+		int result = 0;
+		try {
+			Class.forName("oracle.jdbc.driver.OracleDriver");
+			String url = "jdbc:oracle:thin:@localhost:1521:xe";
+			conn = DriverManager.getConnection(url, "board", "1234");
+
+			String sql = "insert into board " 
+			    + "(BOARD_NUM,BOARD_NAME,BOARD_PASS,BOARD_SUBJECT,"
+				+ " BOARD_CONTENT, BOARD_RE_REF,"
+			    + " BOARD_RE_LEV,BOARD_RE_SEQ,BOARD_READCOUNT,"
+				+ " BOARD_DATE) " 
+			    + " values(board_seq.nextval,?,?,?,"
+			    + "        ?,  board_seq.nextval,"
+			    + "        ?,?,?,"
+			    + "        sysdate)";
+
+			// 새로운 글을 등록하는 부분입니다.
+			pstmt = conn.prepareStatement(sql);
+			pstmt.setString(1, board.getBoard_name());
+			pstmt.setString(2, board.getBoard_pass());
+			pstmt.setString(3, board.getBoard_subject());
+			pstmt.setString(4, board.getBoard_content());
+
+			// 원문의 경우 BOARD_RE_LEV, BOARD_RE_SEQ 필드 값은 0 입니다.
+			pstmt.setInt(5, 0); // BOARD_RE_LEV 필드
+			pstmt.setInt(6, 0); // BOARD_RE_SEQ 필드
+			pstmt.setInt(7, 0); // BOARD_READCOUNT 필드
+
+			result = pstmt.executeUpdate();
+			
+		} catch (Exception ex) {
+			System.out.println("boardInsert() 에러: " + ex);
+			ex.printStackTrace();
+		} finally {
+			if (pstmt != null)
+				try {
+						pstmt.close();
+				} catch (SQLException e) {
+					System.out.println(e.getMessage());
+				}
+			if (conn != null)
+				try {
+					conn.close(); //4단계 : DB연결을 끊는다.
+				} catch (Exception e) {
+					System.out.println(e.getMessage());
+				}
+		}
+		return result;
+	}// boardInsert()메서드 end
+
+	// 글 답변
+	public int boardReply(Board board) {
+		Connection conn = null;
+		PreparedStatement pstmt = null;
+		
+		int result = 0;
+
+		int re_ref = board.getBoard_re_ref();
+
+		
+		int re_lev = board.getBoard_re_lev();
+
+		// 같은 관련 글 중에서 해당 글이 출력되는 순서입니다.
+		int re_seq = board.getBoard_re_seq();
+
+		try {
+			Class.forName("oracle.jdbc.driver.OracleDriver");
+			String url = "jdbc:oracle:thin:@localhost:1521:xe";
+			conn = DriverManager.getConnection(url, "board", "1234");
+			
+			// 트랜잭션을 이용하기 위해서 setAutoCommit을 false로 설정합니다.
+			conn.setAutoCommit(false);
+
+			
+			String sql =   "update board " 
+					     + "set    BOARD_RE_SEQ = BOARD_RE_SEQ + 1 " 
+						 + "where  BOARD_RE_REF = ? "
+					  	 + "and    BOARD_RE_SEQ > ? ";
+
+			pstmt = conn.prepareStatement(sql);
+			pstmt.setInt(1, re_ref);
+			pstmt.setInt(2, re_seq);
+			pstmt.executeUpdate();
+			pstmt.close();
+			
+			// 등록할 답변 글의 BOARD_RE_LEV, BOARD_RE_SEQ 값을 원문 글보다 1씩 증가시킵니다.
+			++re_seq;
+			++re_lev;
+
+			sql = "insert into board " 
+			     + "(BOARD_NUM,BOARD_NAME,BOARD_PASS,BOARD_SUBJECT,"
+				 + " BOARD_CONTENT, BOARD_FILE, BOARD_RE_REF," 
+			     + " BOARD_RE_LEV, BOARD_RE_SEQ,"
+				 + " BOARD_READCOUNT,BOARD_DATE) " 
+			     + "values(board_seq.nextval,?,?,?,?,?,?,?,?,?,sysdate)";
+
+			pstmt = conn.prepareStatement(sql);
+			pstmt.setString(1, board.getBoard_name());
+			pstmt.setString(2, board.getBoard_pass());
+			pstmt.setString(3, board.getBoard_subject());
+			pstmt.setString(4, board.getBoard_content());
+			pstmt.setString(5, ""); // 답변에는 파일을 업로드하지 않습니다.
+			pstmt.setInt(6, re_ref);
+			pstmt.setInt(7, re_lev);
+			pstmt.setInt(8, re_seq);
+			pstmt.setInt(9, 0); // BOARD_READCOUNT(조회수)는 0
+			result = pstmt.executeUpdate();
+			conn.commit(); // commit합니다.
+
+		} catch (Exception ex) {
+			ex.printStackTrace();
+			System.out.println("boardReply() 에러 : " + ex);
+				try {
+					if (conn != null)
+					   conn.rollback();
+				} catch (SQLException e) {
+					e.printStackTrace();
+				}
+		} finally {
+			
+			if (pstmt != null)
+				try {
+						pstmt.close();
+				} catch (SQLException e) {
+					System.out.println(e.getMessage());
+				}
+			if (conn != null)
+				try {
+					conn.close(); //4단계 : DB연결을 끊는다.
+				} catch (Exception e) {
+					System.out.println(e.getMessage());
+				}
+		}
+		return result;
+	}// boardReply()메서드 end
+
+	
+	
+}// class end
